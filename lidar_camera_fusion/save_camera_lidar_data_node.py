@@ -44,13 +44,12 @@ class PointCloud2Listener(Node):
     def save_data(self):
         if self.cv_image is None or self.lidar_points is None:
             return #do nothing
-        gprint("HERE", self.camera_count,self.lidar_count)
 
+        np.save(f'{filename}.npy', [self.cv_image, self.lidar_points])
 
     def camera_callback(self, msg):
         self.camera_count+=1
         timestamp = msg.header.stamp
-        yprint("CAMERA:", self.camera_count,timestamp)
 
         self.cv_image = self.bridge.imgmsg_to_cv2(
             msg, desired_encoding='passthrough')
@@ -58,7 +57,6 @@ class PointCloud2Listener(Node):
     def lidar_callback(self, msg):
         self.lidar_count+=1
         timestamp = msg.header.stamp
-        print("LIDAR: ", self.lidar_count,timestamp)
         
         # Deserialize PointCloud2 data into xyz points
         point_gen = pc2.read_points(
@@ -70,7 +68,6 @@ class PointCloud2Listener(Node):
         self.save_data()
         return
 
-        np.save(f'{filename}.npy', points)
 
         return 
 

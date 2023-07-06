@@ -6,7 +6,7 @@ remote_control_laptop_screen_width = 1920
 window_name="TESTNAME"
 cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 # Move window to the 2nd monitor
-cv2.moveWindow(name, remote_control_laptop_screen_width+1,0)
+cv2.moveWindow(window_name, remote_control_laptop_screen_width+1,0)
 # Set the window properties to full screen
 cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
