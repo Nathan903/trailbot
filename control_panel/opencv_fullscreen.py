@@ -1,9 +1,12 @@
 import cv2
 
 # Create a named window
-cv2.namedWindow('Full Screen', cv2.WINDOW_NORMAL)
+window_name="TESTNAME"
+cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+# Move window to the 2nd monitor
+cv2.moveWindow(name, 900,-900)
 # Set the window properties to full screen
-cv2.setWindowProperty('Full Screen', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
 def changeEmoji(emoji_number):
     # Read the image
