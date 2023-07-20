@@ -1,2 +1,9 @@
 lidar_camera_fusion/bag0/**
 lidar_camera_fusion/bag1/**
+lidar_camera_fusion/bag**
+
+lidar_camera_fusion/dump/**
+**.pyc
+lidar_camera_fusion/multipose_model/**
+lidar_camera_fusion/dump2/**
+**.png
