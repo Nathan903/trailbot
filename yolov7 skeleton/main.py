@@ -4,7 +4,7 @@ from pathlib import Path
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
-from numpy import random
+import numpy as np
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -14,8 +14,7 @@ from utils.general import check_img_size, check_requirements, \
                 increment_path
 from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
-
-from sort import *
+import sort
 
 
 """Function to Draw Bounding boxes"""
@@ -87,7 +86,7 @@ def detect(save_img=False):
 
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
-    colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
+    colors = [[np.random.randint(0, 255) for _ in range(3)] for _ in names]
 
     # Run inference
     if device.type != 'cpu':
@@ -270,11 +269,9 @@ if __name__ == '__main__':
     print(opt)
     np.random.seed(opt.seed)
 
-    sort_tracker = Sort(max_age=5,
+    sort_tracker = sort.Sort(max_age=5,
                        min_hits=2,
                        iou_threshold=0.2) 
-
-    #check_requirements(exclude=('pycocotools', 'thop'))
 
     with torch.no_grad():
         if opt.update:  # update all models (to fix SourceChangeWarning)
