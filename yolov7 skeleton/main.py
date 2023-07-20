@@ -45,13 +45,13 @@ def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, 
 
 
 def detect(save_img=False):
-    source, weights, view_img, save_txt, imgsz, trace = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, not opt.no_trace
+    source, save_txt, imgsz = opt.source, opt.save_txt, opt.img_size, 
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://', 'https://'))
-    save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
+    save_dir = Path(increment_path(Path(opt.project) / opt.name))  # increment run
     if not opt.nosave:  
-        (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+        (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True)  # make dir
 
     # Initialize
     set_logging()
@@ -59,11 +59,11 @@ def detect(save_img=False):
     half = device.type != 'cpu'  # half precision only supported on CUDA
 
     # Load model
-    model = attempt_load(weights, map_location=device)  # load FP32 model
+    model = attempt_load(opt.weights, map_location=device)  # load FP32 model
     stride = int(model.stride.max())  # model stride
     imgsz = check_img_size(imgsz, s=stride)  # check img_size
 
-    if trace:
+    if not opt.no_trace:
         model = TracedModel(model, device, opt.img_size)
 
     if half:
@@ -78,7 +78,7 @@ def detect(save_img=False):
     # Set Dataloader
     vid_path, vid_writer = None, None
     if webcam:
-        view_img = check_imshow()
+        opt.view_img = check_imshow()
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz, stride=stride)
     else:
@@ -203,7 +203,7 @@ def detect(save_img=False):
                 cv2.putText(im0, "FPS: " + str(int(fps)), (20, 70), cv2.FONT_HERSHEY_PLAIN, 2, (0,255,0),2)
 
             #######################################################
-            if view_img:
+            if opt.view_img:
                 cv2.imshow(str(p), im0)
                 cv2.waitKey(1)  # 1 millisecond
 
@@ -235,48 +235,47 @@ def detect(save_img=False):
 
 
 if __name__ == '__main__':
+    np.random.seed(0) # make outputs reproducible
+
     parser = argparse.ArgumentParser()
+    # Files and devices:
     parser.add_argument('--weights', nargs='+', type=str, default='yolov7.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='inference/images', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--no-trace', action='store_true', help='don`t trace model (if traced_model.pt already exist this can save time)')
+    parser.add_argument('--source', type=str, default='inference/images', help='video source to process')  # mp4 file/folder, 0 for webcam
+    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    # Hyperparameters:
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS') # Non-maximum suppression is a post-processing step to remove duplicate and overlapping bounding boxes. Intersection over Union (IOU) is a metric used to measure the overlap between two bounding boxes. The IOU threshold controls how strictly the algorithm filters out overlapping bounding boxes. A higher IOU threshold will result in more aggressive suppression and fewer overlapping boxes being retained, while a lower threshold will allow more boxes to survive, even if they partially overlap with each other.
+    # What to output
     parser.add_argument('--view-img', action='store_true', help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
+    parser.add_argument('--project', default='runs/detect', help='save results to project/name')
+    parser.add_argument('--name', default='exp', help='save results to project/name')
+
+    # yolov7 detection options 
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
-    parser.add_argument('--update', action='store_true', help='update all models')
-    parser.add_argument('--project', default='runs/detect', help='save results to project/name')
-    parser.add_argument('--name', default='exp', help='save results to project/name')
-    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
-
+    # SORT tracking options
     parser.add_argument('--track', action='store_true', help='run tracking')
+    # Appearance option (what to display on screen or output video)
     parser.add_argument('--show-track', action='store_true', help='show tracked path')
     parser.add_argument('--show-fps', action='store_true', help='show fps')
     parser.add_argument('--thickness', type=int, default=2, help='bounding box and font size thickness')
-    parser.add_argument('--seed', type=int, default=1, help='random seed to control bbox colors')
     parser.add_argument('--nobbox', action='store_true', help='don`t show bounding box')
     parser.add_argument('--nolabel', action='store_true', help='don`t show label')
     parser.add_argument('--unique-track-color', action='store_true', help='show each track in unique color')
 
-
     opt = parser.parse_args()
     print(opt)
-    np.random.seed(opt.seed)
-
+    
+    # define the SORT tracker
     sort_tracker = sort.Sort(max_age=5,
                        min_hits=2,
                        iou_threshold=0.2) 
 
-    with torch.no_grad():
-        if opt.update:  # update all models (to fix SourceChangeWarning)
-            for opt.weights in ['yolov7.pt']:
-                detect()
-                strip_optimizer(opt.weights)
-        else:
-            detect()
+    with torch.no_grad(): #deactivate the autograd engine to save memory and speed up computations. ### the effects are to be tested 
+        detect() 
