@@ -16,7 +16,6 @@ from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
 import sort
 
-
 """Function to Draw Bounding boxes"""
 def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, names=None, colors = None):
     for i, box in enumerate(bbox):
@@ -43,6 +42,16 @@ def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, 
 
     return img
 
+
+def draw_track_lines(im0, tracks, sort_tracker, thickness):
+    for t, track in enumerate(tracks): # loop over tracks
+        track_color = sort_tracker.color_list[t] # Get the color for the current track from the color_list of sort_tracker
+        for i in range(len(track.centroidarr) - 1): # Iterate over the centroids in the track
+            current_centroid = track.centroidarr[i]
+            next_centroid = track.centroidarr[i + 1]
+            current_point = (int(current_centroid[0]), int(current_centroid[1]))
+            next_point = (int(next_centroid[0]), int(next_centroid[1]))
+            cv2.line(im0, current_point, next_point, track_color, thickness=thickness)
 
 def detect():
     # defining option flags
@@ -158,29 +167,23 @@ def detect():
                 if opt.track:
                     tracked_dets = sort_tracker.update(dets_to_sort, unique_color=True)
                     tracks =sort_tracker.getTrackers()
-
-                    # draw boxes for visualization
                     if len(tracked_dets)>0:
                         bbox_xyxy = tracked_dets[:,:4]
                         identities = tracked_dets[:, 8]
                         categories = tracked_dets[:, 4]
                         confidences = None
-
                         if opt.show_track_lines:
-                            for t, track in enumerate(tracks): #loop over tracks
-                                track_color = sort_tracker.color_list[t] # Get the color for the current track from the color_list of sort_tracker
-                                for i in range(len(track.centroidarr) - 1): # Iterate over the centroids in the track
-                                    current_centroid = track.centroidarr[i]
-                                    next_centroid = track.centroidarr[i + 1]
-                                    current_point = (int(current_centroid[0]), int(current_centroid[1]))
-                                    next_point = (int(next_centroid[0]), int(next_centroid[1]))
-                                    cv2.line(im0, current_point, next_point, track_color, thickness=opt.thickness)
+                            draw_track_lines(im0, tracks, sort_tracker, opt.thickness)
+                    else:
+                        ### not sure if this is possible
+                        print("if len(tracked_dets)>0 == FALSE!!!!")
+                        exit()
                 else:
                     bbox_xyxy = dets_to_sort[:,:4]
                     identities = None
                     categories = dets_to_sort[:, 5]
                     confidences = dets_to_sort[:, 4]
-                
+                # draw bounding boxes for visualization
                 im0 = draw_boxes(im0, bbox_xyxy, identities, categories, confidences, names, colors)
 
 
