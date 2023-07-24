@@ -3,7 +3,6 @@ import time
 from pathlib import Path
 import cv2
 import torch
-import torch.backends.cudnn as cudnn
 import numpy as np
 
 from models.experimental import attempt_load
@@ -38,7 +37,6 @@ def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, 
             c2 = x1 + t_size[0], y1 - t_size[1] - 3
             cv2.rectangle(img, (x1, y1), c2, color, -1, cv2.LINE_AA)  # filled
             cv2.putText(img, label, (x1, y1 - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
-
 
     return img
 
@@ -88,7 +86,7 @@ def detect():
     vid_path, vid_writer = None, None
     if webcam:
         opt.view_img = check_imshow()
-        cudnn.benchmark = True  # set True to speed up constant image size inference
+        torch.backends.cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsize, stride=stride)
     else:
         dataset = LoadImages(source, img_size=imgsize, stride=stride)
@@ -141,28 +139,22 @@ def detect():
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
-                p, s, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
+                p, output_string, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
             else:
-                p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
+                p, output_string, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
 
             p = Path(p)  # to Path
             save_path = str(save_dir / p.name)  # img.jpg
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-            if len(det):
+            if len(det)!=0:
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
-
-                # Print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
                 dets_to_sort = np.empty((0,6))
                 # NOTE: We send in detected object class too
                 for x1,y1,x2,y2,conf,detclass in det.cpu().detach().numpy():
-                    dets_to_sort = np.vstack((dets_to_sort, 
-                                np.array([x1, y1, x2, y2, conf, detclass])))
+                    dets_to_sort = np.vstack((dets_to_sort, np.array([x1, y1, x2, y2, conf, detclass])))
 
                 if opt.track:
                     tracked_dets = sort_tracker.update(dets_to_sort, unique_color=True)
@@ -186,9 +178,13 @@ def detect():
                 # draw bounding boxes for visualization
                 im0 = draw_boxes(im0, bbox_xyxy, identities, categories, confidences, names, colors)
 
+                # prepare print results
+                for c in det[:, -1].unique():
+                    n = (det[:, -1] == c).sum()  # detections per class
+                    output_string += f"{n} {names[int(c)]}, "  # add to string
 
             # Print time
-            print(f'{s}Done. ({(1E3 * (time2 - time1)):.1f}ms) Inference, ({(1E3 * (time3 - time2)):.1f}ms) NMS')
+            print(f'{output_string}Done. ({(1E3 * (time2 - time1)):.1f}ms) Inference, ({(1E3 * (time3 - time2)):.1f}ms) NMS')
 
 
             # Show result on live cv2 window view: FPS
