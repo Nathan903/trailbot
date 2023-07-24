@@ -50,174 +50,175 @@ def draw_track_lines(im0, tracks, sort_tracker, thickness):
             current_point = (int(current_centroid[0]), int(current_centroid[1]))
             next_point = (int(next_centroid[0]), int(next_centroid[1]))
             cv2.line(im0, current_point, next_point, track_color, thickness=thickness)
+class Yolo_sort_tracker:
+    def __init__(self):
+        # Initialize
+        set_logging()
+        self.device = select_device(opt.device)
+        self.use_half_precision = self.device.type != 'cpu'  # enable half precision if on GPU (only supported on CUDA)
 
-def detect():
-    # defining option flags
-    source, imgsize = opt.source, opt.img_size, 
-    save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
-    webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
-        ('rtsp://', 'rtmp://', 'http://', 'https://'))
-    save_dir = Path(increment_path(Path(opt.project) / opt.name))  # increment run
-    if not opt.nosave:  
-        save_dir.mkdir(parents=True)  # make dir
+        # Load model
+        self.model = attempt_load(opt.weights_file, map_location=self.device)  # load FP32 model
+        self.stride = int(self.model.stride.max())  # model stride, which is the step size or the number of units the sliding window moves when performing operations like convolution or pooling
+        self.imgsize = check_img_size(opt.img_size, s=self.stride)  # check img_size
+        if not opt.no_trace:
+            self.model = TracedModel(self.model, self.device, opt.img_size)
+        if self.use_half_precision:
+            self.model.half()  # to FP16
 
-    # Initialize
-    set_logging()
-    device = select_device(opt.device)
-    use_half_precision = device.type != 'cpu'  # enable half precision if on GPU (only supported on CUDA)
+        # Run inference once if on GPU. Not sure why or even if this is necessary. ### to be tested
+        if self.device.type != 'cpu':
+            self.model(torch.zeros(1, 3, self.imgsize, self.imgsize).to(self.device).type_as(next(self.model.parameters())))
 
-    # Load model
-    model = attempt_load(opt.weights_file, map_location=device)  # load FP32 model
-    stride = int(model.stride.max())  # model stride, which is the step size or the number of units the sliding window moves when performing operations like convolution or pooling
-    imgsize = check_img_size(imgsize, s=stride)  # check img_size
-    if not opt.no_trace:
-        model = TracedModel(model, device, opt.img_size)
-    if use_half_precision:
-        model.half()  # to FP16
+        # Set Dataloader
+        source = opt.source 
+        self.vid_path, self.vid_writer = None, None
+        self.webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
+            ('rtsp://', 'rtmp://', 'http://', 'https://'))
+        if self.webcam:
+            opt.view_img = check_imshow()
+            torch.backends.cudnn.benchmark = True  # set True to speed up constant image size inference
+            self.dataset = LoadStreams(source, img_size=self.imgsize, stride=self.stride)
+        else:
+            self.dataset = LoadImages(source, img_size=self.imgsize, stride=self.stride)
 
-    # # Second-stage classifier. 
-    # # This is commented because we are just detecting people, and we don't need to classify the detected stuffs
-    # classify = False
-    # if classify:
-    #     modelc = load_classifier(name='resnet101', n=2)  # initialize
-    #     modelc.load_state_dict(torch.load('weights/resnet101.pt', map_location=device)['model']).to(device).eval()
+        # defining option flags
+        self.save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
+        self.save_dir = Path(increment_path(Path(opt.project) / opt.name))  # increment run
+        if not opt.nosave:  
+            self.save_dir.mkdir(parents=True)  # make dir
 
-    # Set Dataloader
-    vid_path, vid_writer = None, None
-    if webcam:
-        opt.view_img = check_imshow()
-        torch.backends.cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(source, img_size=imgsize, stride=stride)
-    else:
-        dataset = LoadImages(source, img_size=imgsize, stride=stride)
-
-    # Get names and colors 
-    names = model.module.names if hasattr(model, 'module') else model.names
-    colors = [[np.random.randint(0, 255) for _ in range(3)] for _ in names]
- 
-    # Run inference once if on GPU. Not sure why or even if this is necessary. ### to be tested
-    if device.type != 'cpu':
-        model(torch.zeros(1, 3, imgsize, imgsize).to(device).type_as(next(model.parameters())))  # run once
-
-    old_img_w = old_img_h = imgsize
-    old_img_b = 1
-
-    startTime = 0
-    for path, img, im0s, vid_cap in dataset:
-        img = torch.from_numpy(img).to(device)
-        img = img.half() if use_half_precision else img.float()  # uint8 to FP16 or FP32
-        img /= 255.0  # 0~255 to 0.0~1.0
-        if img.ndimension() == 3:
-            img = img.unsqueeze(0)
-
-        # Warmup. Not sure why or even if this is necessary. ### to be tested
-        if device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
-            old_img_b = img.shape[0]
-            old_img_h = img.shape[2]
-            old_img_w = img.shape[3]
-            for i in range(3):
-                model(img, augment=opt.augment)[0]
-
-        # Inference
-        time1 = time_synchronized()
-        pred = model(img, augment=opt.augment)[0]
-        time2 = time_synchronized()
-
-        # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-        time3 = time_synchronized()
-
-        # # Apply second-stage classifier
+        # # Second-stage classifier. 
+        # # This is commented because we are just detecting people, and we don't need to classify the detected stuffs
+        # classify = False
         # if classify:
-        #     pred = apply_classifier(pred, modelc, img, im0s)
+        #     modelc = load_classifier(name='resnet101', n=2)  # initialize
+        #     modelc.load_state_dict(torch.load('weights/resnet101.pt', map_location=device)['model']).to(device).eval()
 
-        #TESTING ###to be removed
-        if len(pred)!=1:
-            print("\n",len(pred))
-            exit()
 
-        # Process detections
-        for i, det in enumerate(pred):  # detections per image
-            if webcam:  # batch_size >= 1
-                p, output_string, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
-            else:
-                p, output_string, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
+    def detect(self):
+        # Get names and colors 
+        names = self.model.module.names if hasattr(self.model, 'module') else self.model.names
+        colors = [[np.random.randint(0, 255) for _ in range(3)] for _ in names]
 
-            p = Path(p)  # to Path
-            save_path = str(save_dir / p.name)  # img.jpg
-            txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
-            gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-            if len(det)!=0:
-                # Rescale boxes from img_size to im0 size
-                det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+        old_img_w = old_img_h = self.imgsize
+        old_img_b = 1
 
-                dets_to_sort = np.empty((0,6))
-                # NOTE: We send in detected object class too
-                for x1,y1,x2,y2,conf,detclass in det.cpu().detach().numpy():
-                    dets_to_sort = np.vstack((dets_to_sort, np.array([x1, y1, x2, y2, conf, detclass])))
+        startTime = 0
+        for path, img, im0s, vid_cap in self.dataset:
+            img = torch.from_numpy(img).to(self.device)
+            img = img.half() if self.use_half_precision else img.float()  # uint8 to FP16 or FP32
+            img /= 255.0  # 0~255 to 0.0~1.0
+            if img.ndimension() == 3:
+                img = img.unsqueeze(0)
 
-                if opt.track:
-                    tracked_dets = sort_tracker.update(dets_to_sort, unique_color=True)
-                    tracks =sort_tracker.getTrackers()
-                    if len(tracked_dets)>0:
-                        bbox_xyxy = tracked_dets[:,:4]
-                        identities = tracked_dets[:, 8]
-                        categories = tracked_dets[:, 4]
-                        confidences = None
-                        if opt.show_track_lines:
-                            draw_track_lines(im0, tracks, sort_tracker, opt.thickness)
-                    else:
-                        ### not sure if this is possible
-                        print("if len(tracked_dets)>0 == FALSE!!!!")
-                        exit()
+            # Warmup. Not sure why or even if this is necessary. ### to be tested
+            if self.device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
+                old_img_b = img.shape[0]
+                old_img_h = img.shape[2]
+                old_img_w = img.shape[3]
+                for i in range(3):
+                    self.model(img, augment=opt.augment)[0]
+
+            # Inference
+            time1 = time_synchronized()
+            pred = self.model(img, augment=opt.augment)[0]
+            time2 = time_synchronized()
+
+            # Apply NMS
+            pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+            time3 = time_synchronized()
+
+            # # Apply second-stage classifier
+            # if classify:
+            #     pred = apply_classifier(pred, modelc, img, im0s)
+
+            #TESTING ###to be removed
+            if len(pred)!=1:
+                print("\n",len(pred))
+                exit()
+
+            # Process detections
+            for i, det in enumerate(pred):  # detections per image
+                if self.webcam:  # batch_size >= 1
+                    p, output_string, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), self.dataset.count
                 else:
-                    bbox_xyxy = dets_to_sort[:,:4]
-                    identities = None
-                    categories = dets_to_sort[:, 5]
-                    confidences = dets_to_sort[:, 4]
-                # draw bounding boxes for visualization
-                im0 = draw_boxes(im0, bbox_xyxy, identities, categories, confidences, names, colors)
+                    p, output_string, im0, frame = path, '', im0s, getattr(self.dataset, 'frame', 0)
 
-                # prepare print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    output_string += f"{n} {names[int(c)]}, "  # add to string
+                gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+                if len(det)!=0:
+                    # Rescale boxes from img_size to im0 size
+                    det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
-            # Print time
-            print(f'{output_string}Done. ({(1E3 * (time2 - time1)):.1f}ms) Inference, ({(1E3 * (time3 - time2)):.1f}ms) NMS')
+                    dets_to_sort = np.empty((0,6))
+                    # NOTE: We send in detected object class too
+                    for x1,y1,x2,y2,conf,detclass in det.cpu().detach().numpy():
+                        dets_to_sort = np.vstack((dets_to_sort, np.array([x1, y1, x2, y2, conf, detclass])))
+
+                    if opt.track:
+                        tracked_dets = sort_tracker.update(dets_to_sort, unique_color=True)
+                        tracks =sort_tracker.getTrackers()
+                        if len(tracked_dets)>0:
+                            bbox_xyxy = tracked_dets[:,:4]
+                            identities = tracked_dets[:, 8]
+                            categories = tracked_dets[:, 4]
+                            confidences = None
+                            if opt.show_track_lines:
+                                draw_track_lines(im0, tracks, sort_tracker, opt.thickness)
+                        else:
+                            ### not sure if this is possible
+                            print("if len(tracked_dets)>0 == FALSE!!!!")
+                            exit()
+                    else:
+                        bbox_xyxy = dets_to_sort[:,:4]
+                        identities = None
+                        categories = dets_to_sort[:, 5]
+                        confidences = dets_to_sort[:, 4]
+                    # draw bounding boxes for visualization
+                    im0 = draw_boxes(im0, bbox_xyxy, identities, categories, confidences, names, colors)
+
+                    # prepare print results
+                    for c in det[:, -1].unique():
+                        n = (det[:, -1] == c).sum()  # detections per class
+                        output_string += f"{n} {names[int(c)]}, "  # add to string
+
+                # Print time
+                print(f'{output_string}Done. ({(1E3 * (time2 - time1)):.1f}ms) Inference, ({(1E3 * (time3 - time2)):.1f}ms) NMS')
 
 
-            # Show result on live cv2 window view: FPS
-            if opt.show_fps and dataset.mode != 'image' :
-                currentTime = time.time()
-                fps = 1/(currentTime - startTime)
-                startTime = currentTime
-                cv2.putText(im0, "FPS: " + str(round(fps, 3)), (20, 70), cv2.FONT_HERSHEY_PLAIN, 2, (0,255,0),2)
-            # Show result on live cv2 window view: image
-            if opt.view_img:
-                cv2.imshow(str(p), im0)
-                cv2.waitKey(1)  # 1 millisecond
+                # Show result on live cv2 window view: FPS
+                if opt.show_fps and self.dataset.mode != 'image' :
+                    currentTime = time.time()
+                    fps = 1/(currentTime - startTime)
+                    startTime = currentTime
+                    cv2.putText(im0, "FPS: " + str(round(fps, 3)), (20, 70), cv2.FONT_HERSHEY_PLAIN, 2, (0,255,0),2)
+                # Show result on live cv2 window view: image
+                if opt.view_img:
+                    cv2.imshow("yolov7 preview", im0)
+                    cv2.waitKey(1)  # 1 millisecond
 
 
-            # Save results (image with detections) to local file.
-            if save_img:
-                if dataset.mode == 'image':
-                    cv2.imwrite(save_path, im0)
-                    print(f" The image with the result is saved in: {save_path}")
-                else:  # 'video' or 'stream'
-                    if vid_path != save_path:  # new video
-                        vid_path = save_path
-                        if isinstance(vid_writer, cv2.VideoWriter):
-                            vid_writer.release()  # release previous video writer
-                        if vid_cap:  # video
-                            fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                            w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                            h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        else:  # stream
-                            fps, w, h = 30, im0.shape[1], im0.shape[0]
-                            save_path += '.mp4'
-                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                    vid_writer.write(im0)
+                # Save results (image with detections) to local file.
+                p = Path(p)  # to Path
+                save_path = str(self.save_dir / p.name)  # img.jpg
+                if self.save_img:
+                    if self.dataset.mode == 'image':
+                        cv2.imwrite(save_path, im0)
+                        print(f" The image with the result is saved in: {save_path}")
+                    else:  # 'video' or 'stream'
+                        if self.vid_path != save_path:  # new video
+                            self.vid_path = save_path
+                            if isinstance(self.vid_writer, cv2.VideoWriter):
+                                self.vid_writer.release()  # release previous video writer
+                            if vid_cap:  # video
+                                fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                                w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            else:  # stream
+                                fps, w, h = 30, im0.shape[1], im0.shape[0]
+                                save_path += '.mp4'
+                            self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+                        self.vid_writer.write(im0)
 
 
 if __name__ == '__main__':
@@ -260,5 +261,6 @@ if __name__ == '__main__':
                        min_hits=2,
                        iou_threshold=0.2) 
 
-    with torch.no_grad(): #deactivate the autograd engine to save memory and speed up computations. On cpu, the speed is 15% faster with this 
-        detect() 
+    with torch.no_grad(): #deactivate the autograd engine to save memory and speed up computations. On cpu, the speed is 15% faster with this
+        yolo_sort_tracker=Yolo_sort_tracker() 
+        yolo_sort_tracker.detect() 
