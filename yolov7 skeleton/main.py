@@ -155,10 +155,8 @@ def detect():
                     dets_to_sort = np.vstack((dets_to_sort, 
                                 np.array([x1, y1, x2, y2, conf, detclass])))
 
-
                 if opt.track:
-  
-                    tracked_dets = sort_tracker.update(dets_to_sort, opt.unique_track_color)
+                    tracked_dets = sort_tracker.update(dets_to_sort, unique_color=True)
                     tracks =sort_tracker.getTrackers()
 
                     # draw boxes for visualization
@@ -168,19 +166,15 @@ def detect():
                         categories = tracked_dets[:, 4]
                         confidences = None
 
-                        if opt.show_track:
-                            #loop over tracks
-                            for t, track in enumerate(tracks):
-                  
-                                track_color = colors[int(track.detclass)] if not opt.unique_track_color else sort_tracker.color_list[t]
-
-                                [cv2.line(im0, (int(track.centroidarr[i][0]),
-                                                int(track.centroidarr[i][1])), 
-                                                (int(track.centroidarr[i+1][0]),
-                                                int(track.centroidarr[i+1][1])),
-                                                track_color, thickness=opt.thickness) 
-                                                for i,_ in  enumerate(track.centroidarr) 
-                                                    if i < len(track.centroidarr)-1 ] 
+                        if opt.show_track_lines:
+                            for t, track in enumerate(tracks): #loop over tracks
+                                track_color = sort_tracker.color_list[t] # Get the color for the current track from the color_list of sort_tracker
+                                for i in range(len(track.centroidarr) - 1): # Iterate over the centroids in the track
+                                    current_centroid = track.centroidarr[i]
+                                    next_centroid = track.centroidarr[i + 1]
+                                    current_point = (int(current_centroid[0]), int(current_centroid[1]))
+                                    next_point = (int(next_centroid[0]), int(next_centroid[1]))
+                                    cv2.line(im0, current_point, next_point, track_color, thickness=opt.thickness)
                 else:
                     bbox_xyxy = dets_to_sort[:,:4]
                     identities = None
@@ -253,12 +247,11 @@ if __name__ == '__main__':
     # SORT tracking options
     parser.add_argument('--track', action='store_true', help='run tracking')
     # Appearance option (what to display on screen or output video)
-    parser.add_argument('--show-track', action='store_true', help='show tracked path')
+    parser.add_argument('--show-track-lines', action='store_true', help='show tracked path')
     parser.add_argument('--show-fps', action='store_true', help='show fps')
     parser.add_argument('--thickness', type=int, default=2, help='bounding box and font size thickness')
     parser.add_argument('--nobbox', action='store_true', help='don`t show bounding box')
     parser.add_argument('--nolabel', action='store_true', help='don`t show label')
-    parser.add_argument('--unique-track-color', action='store_true', help='show each track in unique color')
 
     opt = parser.parse_args()
     print(opt)
