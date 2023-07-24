@@ -46,13 +46,13 @@ def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, 
 
 def detect():
     # defining option flags
-    source, save_txt, imgsize = opt.source, opt.save_txt, opt.img_size, 
+    source, imgsize = opt.source, opt.img_size, 
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://', 'https://'))
     save_dir = Path(increment_path(Path(opt.project) / opt.name))  # increment run
     if not opt.nosave:  
-        (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True)  # make dir
+        save_dir.mkdir(parents=True)  # make dir
 
     # Initialize
     set_logging()
@@ -98,12 +98,12 @@ def detect():
     startTime = 0
     for path, img, im0s, vid_cap in dataset:
         img = torch.from_numpy(img).to(device)
-        img = img.half() if use_half_precision else img.float()  # uint8 to fp16/32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        img = img.half() if use_half_precision else img.float()  # uint8 to FP16 or FP32
+        img /= 255.0  # 0~255 to 0.0~1.0
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
 
-        # Warmup
+        # Warmup. Not sure why or even if this is necessary. ### to be tested
         if device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
             old_img_b = img.shape[0]
             old_img_h = img.shape[2]
@@ -112,17 +112,22 @@ def detect():
                 model(img, augment=opt.augment)[0]
 
         # Inference
-        t1 = time_synchronized()
+        time1 = time_synchronized()
         pred = model(img, augment=opt.augment)[0]
-        t2 = time_synchronized()
+        time2 = time_synchronized()
 
         # Apply NMS
         pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-        t3 = time_synchronized()
+        time3 = time_synchronized()
 
         # # Apply second-stage classifier
         # if classify:
         #     pred = apply_classifier(pred, modelc, img, im0s)
+
+        #TESTING ###to be removed
+        if len(pred)!=1:
+            print("\n",len(pred))
+            exit()
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
@@ -184,25 +189,24 @@ def detect():
                 
                 im0 = draw_boxes(im0, bbox_xyxy, identities, categories, confidences, names, colors)
 
-                
-                    
-                
-                
-            # Print time (inference + NMS)
-            print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
 
-            # Show result
+            # Print time
+            print(f'{s}Done. ({(1E3 * (time2 - time1)):.1f}ms) Inference, ({(1E3 * (time3 - time2)):.1f}ms) NMS')
+
+
+            # Show result on live cv2 window view: FPS
             if opt.show_fps and dataset.mode != 'image' :
                 currentTime = time.time()
                 fps = 1/(currentTime - startTime)
                 startTime = currentTime
                 cv2.putText(im0, "FPS: " + str(round(fps, 3)), (20, 70), cv2.FONT_HERSHEY_PLAIN, 2, (0,255,0),2)
-
+            # Show result on live cv2 window view: image
             if opt.view_img:
                 cv2.imshow(str(p), im0)
                 cv2.waitKey(1)  # 1 millisecond
 
-            # Save results (image with detections)
+
+            # Save results (image with detections) to local file.
             if save_img:
                 if dataset.mode == 'image':
                     cv2.imwrite(save_path, im0)
@@ -222,11 +226,6 @@ def detect():
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                     vid_writer.write(im0)
 
-    if save_txt or save_img:
-        s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
-        #print(f"Results saved to {save_dir}{s}")
-
-
 
 if __name__ == '__main__':
     np.random.seed(0) # make outputs reproducible
@@ -243,8 +242,6 @@ if __name__ == '__main__':
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS') # Non-maximum suppression is a post-processing step to remove duplicate and overlapping bounding boxes. Intersection over Union (IOU) is a metric used to measure the overlap between two bounding boxes. The IOU threshold controls how strictly the algorithm filters out overlapping bounding boxes. A higher IOU threshold will result in more aggressive suppression and fewer overlapping boxes being retained, while a lower threshold will allow more boxes to survive, even if they partially overlap with each other.
     # What to output
     parser.add_argument('--view-img', action='store_true', help='display results')
-    parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
-    parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
     parser.add_argument('--project', default='runs/detect', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
