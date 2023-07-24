@@ -44,8 +44,9 @@ def draw_boxes(img, bbox, identities=None, categories=None, confidences = None, 
     return img
 
 
-def detect(save_img=False):
-    source, save_txt, imgsz = opt.source, opt.save_txt, opt.img_size, 
+def detect():
+    # defining option flags
+    source, save_txt, imgsize = opt.source, opt.save_txt, opt.img_size, 
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://', 'https://'))
@@ -56,51 +57,48 @@ def detect(save_img=False):
     # Initialize
     set_logging()
     device = select_device(opt.device)
-    half = device.type != 'cpu'  # half precision only supported on CUDA
+    use_half_precision = device.type != 'cpu'  # enable half precision if on GPU (only supported on CUDA)
 
     # Load model
-    model = attempt_load(opt.weights, map_location=device)  # load FP32 model
-    stride = int(model.stride.max())  # model stride
-    imgsz = check_img_size(imgsz, s=stride)  # check img_size
-
+    model = attempt_load(opt.weights_file, map_location=device)  # load FP32 model
+    stride = int(model.stride.max())  # model stride, which is the step size or the number of units the sliding window moves when performing operations like convolution or pooling
+    imgsize = check_img_size(imgsize, s=stride)  # check img_size
     if not opt.no_trace:
         model = TracedModel(model, device, opt.img_size)
-
-    if half:
+    if use_half_precision:
         model.half()  # to FP16
 
-    # Second-stage classifier
-    classify = False
-    if classify:
-        modelc = load_classifier(name='resnet101', n=2)  # initialize
-        modelc.load_state_dict(torch.load('weights/resnet101.pt', map_location=device)['model']).to(device).eval()
+    # # Second-stage classifier. 
+    # # This is commented because we are just detecting people, and we don't need to classify the detected stuffs
+    # classify = False
+    # if classify:
+    #     modelc = load_classifier(name='resnet101', n=2)  # initialize
+    #     modelc.load_state_dict(torch.load('weights/resnet101.pt', map_location=device)['model']).to(device).eval()
 
     # Set Dataloader
     vid_path, vid_writer = None, None
     if webcam:
         opt.view_img = check_imshow()
         cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(source, img_size=imgsz, stride=stride)
+        dataset = LoadStreams(source, img_size=imgsize, stride=stride)
     else:
-        dataset = LoadImages(source, img_size=imgsz, stride=stride)
+        dataset = LoadImages(source, img_size=imgsize, stride=stride)
 
-    # Get names and colors
+    # Get names and colors 
     names = model.module.names if hasattr(model, 'module') else model.names
     colors = [[np.random.randint(0, 255) for _ in range(3)] for _ in names]
-
-    # Run inference
+ 
+    # Run inference once if on GPU. Not sure why or even if this is necessary. ### to be tested
     if device.type != 'cpu':
-        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
-    old_img_w = old_img_h = imgsz
+        model(torch.zeros(1, 3, imgsize, imgsize).to(device).type_as(next(model.parameters())))  # run once
+
+    old_img_w = old_img_h = imgsize
     old_img_b = 1
 
-    t0 = time.time()
-    ###################################
     startTime = 0
-    ###################################
     for path, img, im0s, vid_cap in dataset:
         img = torch.from_numpy(img).to(device)
-        img = img.half() if half else img.float()  # uint8 to fp16/32
+        img = img.half() if use_half_precision else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
@@ -122,9 +120,9 @@ def detect(save_img=False):
         pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         t3 = time_synchronized()
 
-        # Apply Classifier
-        if classify:
-            pred = apply_classifier(pred, modelc, img, im0s)
+        # # Apply second-stage classifier
+        # if classify:
+        #     pred = apply_classifier(pred, modelc, img, im0s)
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
@@ -193,16 +191,13 @@ def detect(save_img=False):
             # Print time (inference + NMS)
             print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
 
-            # Stream results
-            ######################################################
-            if dataset.mode != 'image' and opt.show_fps:
+            # Show result
+            if opt.show_fps and dataset.mode != 'image' :
                 currentTime = time.time()
-
                 fps = 1/(currentTime - startTime)
                 startTime = currentTime
                 cv2.putText(im0, "FPS: " + str(round(fps, 3)), (20, 70), cv2.FONT_HERSHEY_PLAIN, 2, (0,255,0),2)
 
-            #######################################################
             if opt.view_img:
                 cv2.imshow(str(p), im0)
                 cv2.waitKey(1)  # 1 millisecond
@@ -231,7 +226,6 @@ def detect(save_img=False):
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         #print(f"Results saved to {save_dir}{s}")
 
-    print(f'Done. ({time.time() - t0:.3f}s)')
 
 
 if __name__ == '__main__':
@@ -239,7 +233,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     # Files and devices:
-    parser.add_argument('--weights', nargs='+', type=str, default='yolov7.pt', help='model.pt path(s)')
+    parser.add_argument('--weights-file', nargs='+', type=str, default='yolov7.pt', help='model.pt path(s)')
     parser.add_argument('--no-trace', action='store_true', help='don`t trace model (if traced_model.pt already exist this can save time)')
     parser.add_argument('--source', type=str, default='inference/images', help='video source to process')  # mp4 file/folder, 0 for webcam
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
