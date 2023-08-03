@@ -59,7 +59,7 @@ class PointCloud2Listener(Node):
         if self.cv_image is None or self.lidar_points is None:
             return #do nothing
         if saveDump:=True:
-            np.savez(f'dump2/{self.lidar_count}.npz', self.cv_image, self.lidar_points)
+            np.savez(f'dump3/{self.lidar_count}.npz', self.cv_image, self.lidar_points)
     def camera_callback(self, msg):
         self.camera_count+=1
         diff = calculate_time_difference(self.camera_timestamp,msg.header.stamp)
@@ -113,8 +113,8 @@ def run_shell_command(command):
         process.communicate()
 
 
-command1 = "" #"ros2 run image_transport republish compressed raw --ros-args --remap in/compressed:=/camera/compressed --remap out:=/camera"
-command2 = "ros2 bag play bag2"
+command1 = "ros2 run image_transport republish compressed raw --ros-args --remap in/compressed:=/camera/compressed --remap out:=/camera"
+command2 = "ros2 bag play bag3"
 
 if __name__ == '__main__':
 

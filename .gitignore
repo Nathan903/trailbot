@@ -15,3 +15,4 @@ lidar_camera_fusion/sort.py
 lidar_camera_fusion/yolov7.py
 lidar_camera_fusion/traced_model.pt
 lidar_camera_fusion/yolov7.pt
+*.npz

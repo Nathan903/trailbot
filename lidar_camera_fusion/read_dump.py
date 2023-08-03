@@ -41,9 +41,9 @@ ax3 = ax2.twinx()
 class internalState:
 	human_max_speed = 2.8 # m/s
 	fps = 10
-	buffer_ratio = 1.5 # allow fluctuation of up to 1.5 times 
+	buffer_ratio = 1.1 # allow fluctuation of up to 1.1 times 
 	max_movement_per_frame = human_max_speed / fps * buffer_ratio
-	moving_average_weights = [10,5,3,2,1]
+	moving_average_weights = [20,5,3,2,1]
 
 	def __init__(self,depth_history_length):
 		# Instance attributes (unique to each instance)
@@ -52,7 +52,7 @@ class internalState:
 		self.missing_frame_count = 0 
 		self.depth_history_length =depth_history_length  
 
-	def weighted_moving_average(data, weights):
+	def weighted_moving_average(self,data, weights):
 		num_points = min(len(data), len(weights))
 		weights_sum = 0
 		weighted_data_sum = 0
@@ -85,7 +85,7 @@ class internalState:
 
 
 images = []
-for k in range(5,20):
+for k in range(4,20):
 	depths = []
 	estimation_mean_distances=[]
 
@@ -93,7 +93,7 @@ for k in range(5,20):
 	state2 = internalState(5)
 
 	for i in range(50  , 716):
-		image, points = np.load(f'dump2/{i}.npz').values()
+		image, points = np.load(f'dump3python3 save_camera_lidar_data_node.py/{i}.npz').values()
 
 		there_is_person = human_detection_node.process_frame(image,p,)
 		test_x, test_y = p[0].x -15 ,p[0].y -15
@@ -111,7 +111,7 @@ for k in range(5,20):
 		depth2 = state.get_average()
 		estimation_mean_distances.append(depth2)
 
-		if show_animation:=0 :
+		if show_animation:=1 :
 			
 			ax1.cla()
 			ax1.axis('off')
@@ -125,14 +125,7 @@ for k in range(5,20):
 			# ax2.plot(depths, color='red')
 			ax3.plot(depths, color='green')
 			plt.pause(0.001)
-
-		# Add a red point to the image
-		# x, y = track_person(image)
-		# cv2.circle(rgb_image, (x, y), 10, (255, 0, 0), -1)
-		
-		# images.append([plt.imshow(rgb_image, animated=True)])
-
-		if testnow:=1:
+		else:
 			ax1.cla()
 			ax2.cla()
 			ax3.cla()
