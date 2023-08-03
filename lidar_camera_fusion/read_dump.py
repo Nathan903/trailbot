@@ -7,9 +7,7 @@ import random
 import human_detection_node
 from human_detection_node import Person
 
-human_detection_node.SAVED_MODEL_PATH = "multipose_model"
 human_detection_node.parse_global_matrix()
-human_detection_node.model = human_detection_node.load_saved_model()
 p = [Person(),]
 
 def track_person(image):
@@ -52,7 +50,7 @@ class internalState:
 		self.missing_frame_count = 0 
 		self.depth_history_length =depth_history_length  
 
-	def weighted_moving_average(data, weights):
+	def weighted_moving_average(self,data, weights):
 		num_points = min(len(data), len(weights))
 		weights_sum = 0
 		weighted_data_sum = 0
@@ -81,6 +79,47 @@ class internalState:
 		return 1
 
 
+import yolov7
+import torch
+import cv2
+import math
+with torch.no_grad():
+	yolo_sort_tracker=yolov7.Yolo_sort_tracker() 
+	mywebcam = cv2.VideoCapture(0)
+def xyxy_to_centroid(xyxy):
+    x1, y1, x2, y2 = xyxy
+    centroid_x = (x1 + x2) / 2
+    centroid_y = (y1 + y2) / 2
+    return (centroid_x, centroid_y)
+def get_heading_angle(
+        centroid,
+        fov=90,
+        image_width=1,
+        offset=0,
+        scaling=1):
+    """
+    get the heading angle from the camera's perspective to the person,
+     in degree, relative to the center of the field of view
+    """
+    centroid_x, centroid_y = centroid
+    x_angle_radian = math.atan(
+        (centroid_x - (image_width / 2)) / (image_width / 2) * math.tan(math.radians(fov / 2)))
+    return offset + scaling * math.degrees(x_angle_radian)
+
+def process_frame(image, person_array):
+    """
+    process a frame. Determine keypoints and number of people and
+    heading angle.
+    """
+    # Run model inference
+    bounding_boxes, identities, confidences=yolo_sort_tracker.process_frame(image,view_img=False)
+    if identities:
+	    centroid = xyxy_to_centroid(bounding_boxes[0])
+	    person_array[0].heading_angle = get_heading_angle(centroid)
+	    person_array[0].x, person_array[0].y = centroid 
+	    return True
+    return False
+
 
 
 
@@ -95,7 +134,7 @@ for k in range(5,20):
 	for i in range(50  , 716):
 		image, points = np.load(f'dump2/{i}.npz').values()
 
-		there_is_person = human_detection_node.process_frame(image,p,)
+		there_is_person = process_frame(image,p)
 		test_x, test_y = p[0].x -15 ,p[0].y -15
 
 		points2d = human_detection_node.convert_to_camera_frame(points)
@@ -111,8 +150,8 @@ for k in range(5,20):
 		depth2 = state.get_average()
 		estimation_mean_distances.append(depth2)
 
-		if show_animation:=0 :
-			
+		if show_animation:=1:
+			ax1 = plt
 			ax1.cla()
 			ax1.axis('off')
 			ax1.scatter(uv_x,uv_y,s=1,c=uv_z, cmap='jet')
@@ -121,16 +160,10 @@ for k in range(5,20):
 				ax1.scatter(closest_points[0],closest_points[1],s=10,color="red")
 			rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 			ax1.imshow(rgb_image, extent=[0, 1280, 0, 1024])
-
 			# ax2.plot(depths, color='red')
 			ax3.plot(depths, color='green')
 			plt.pause(0.001)
-
-		# Add a red point to the image
-		# x, y = track_person(image)
-		# cv2.circle(rgb_image, (x, y), 10, (255, 0, 0), -1)
 		
-		# images.append([plt.imshow(rgb_image, animated=True)])
 
 		if testnow:=1:
 			ax1.cla()
